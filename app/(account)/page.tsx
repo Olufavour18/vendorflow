@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 
 export default async function AccountPage({
   searchParams,
@@ -60,13 +61,16 @@ export default async function AccountPage({
       )}
 
       {/* Welcome */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Welcome back, {displayName.split(" ")[0]}!
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Manage your orders and account details
-        </p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Welcome back, {displayName.split(" ")[0]}!
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your orders and account details
+          </p>
+        </div>
+        <SignOutButton variant="outline">Sign Out</SignOutButton>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -93,12 +97,15 @@ export default async function AccountPage({
               <p className="text-muted-foreground">Role</p>
               <p className="font-medium capitalize">{profile?.role || "customer"}</p>
             </div>
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
               <Link href="/products">
                 <Button variant="outline" size="sm" className="w-full">
                   Continue Shopping
                 </Button>
               </Link>
+              <SignOutButton variant="ghost" size="sm" className="w-full">
+                Sign Out
+              </SignOutButton>
             </div>
           </CardContent>
         </Card>
@@ -167,18 +174,6 @@ export default async function AccountPage({
             )}
           </CardContent>
         </Card>
-      </div>
-
-      {/* Sign out helper */}
-      <div className="mt-10 text-center">
-        <form action="/auth/signout" method="post">
-          {/* Simple client-side sign out will be better; for now link to login */}
-          <Link href="/auth/login">
-            <Button variant="ghost" size="sm">
-              Switch account
-            </Button>
-          </Link>
-        </form>
       </div>
     </div>
   );
