@@ -12,9 +12,9 @@ export default function CartPage() {
       <div className="container mx-auto px-4 py-16 text-center">
         <h1 className="text-3xl font-bold mb-4">Your Cart</h1>
         <p className="text-muted-foreground mb-8">Your cart is empty.</p>
-        <Button asChild>
-          <Link href="/products">Continue Shopping</Link>
-        </Button>
+        <Link href="/products">
+          <Button>Continue Shopping</Button>
+        </Link>
       </div>
     );
   }
@@ -115,12 +115,16 @@ export default function CartPage() {
               <span>Total</span>
               <span>₦{totalPrice().toLocaleString()}</span>
             </div>
-            <Button asChild className="w-full" size="lg">
-              <Link href="/checkout">Proceed to Checkout</Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full">
-              <Link href="/products">Continue Shopping</Link>
-            </Button>
+            <Link href="/checkout" className="block">
+              <Button className="w-full" size="lg">
+                Proceed to Checkout
+              </Button>
+            </Link>
+            <Link href="/products" className="block">
+              <Button variant="outline" className="w-full">
+                Continue Shopping
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
