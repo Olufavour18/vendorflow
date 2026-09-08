@@ -56,15 +56,19 @@ export default function CheckoutPage() {
     setLoading(true);
     setError(null);
 
+    if (paymentMethod === "PAYSTACK" && !form.email) {
+      setError("Email is required for Paystack payment.");
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
 
     try {
-      // Get current user (can be null for guest checkout)
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      // Generate order number via RPC if available, otherwise fallback
       let orderNumber: string;
       const { data: rpcNumber, error: rpcError } = await supabase.rpc(
         "generate_order_number"
@@ -73,12 +77,11 @@ export default function CheckoutPage() {
       if (!rpcError && rpcNumber) {
         orderNumber = rpcNumber as string;
       } else {
-        // Fallback order number
         orderNumber = `ORD-${Date.now().toString().slice(-8)}`;
       }
 
       const subtotal = totalPrice();
-      const shippingFee = 0; // can be calculated later
+      const shippingFee = 0;
       const totalAmount = subtotal + shippingFee;
 
       const shippingAddress = {
@@ -92,7 +95,7 @@ export default function CheckoutPage() {
         landmark: form.landmark || null,
       };
 
-      // 1. Create the order
+      // 1. Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
@@ -116,7 +119,7 @@ export default function CheckoutPage() {
         throw new Error(orderError?.message || "Failed to create order");
       }
 
-      // 2. Create order items
+      // 2. Order items
       const orderItems = items.map((item) => ({
         order_id: order.id,
         product_id: item.id,
@@ -136,8 +139,8 @@ export default function CheckoutPage() {
         throw new Error(itemsError.message || "Failed to save order items");
       }
 
-      // 3. Create payment record
-      const { error: paymentError } = await supabase.from("payments").insert({
+      // 3. Payment record
+      await supabase.from("payments").insert({
         order_id: order.id,
         amount: totalAmount,
         currency: "NGN",
@@ -145,19 +148,40 @@ export default function CheckoutPage() {
         status: "PENDING",
       });
 
-      if (paymentError) {
-        console.error("Payment record error:", paymentError);
-        // Non-blocking — order is already created
+      // 4. Paystack flow
+      if (paymentMethod === "PAYSTACK") {
+        const payRes = await fetch("/api/paystack/initialize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orderId: order.id,
+            email: form.email,
+            amount: totalAmount,
+          }),
+        });
+
+        const payData = await payRes.json();
+
+        if (!payRes.ok || !payData.authorization_url) {
+          throw new Error(payData.error || "Failed to start Paystack payment");
+        }
+
+        // Clear cart before redirect (order is already saved)
+        clearCart();
+        window.location.href = payData.authorization_url;
+        return;
       }
 
-      // Success — clear cart and redirect
+      // Bank transfer — just confirm order
       clearCart();
       router.push("/account?order=success");
       router.refresh();
     } catch (err) {
       console.error(err);
       setError(
-        err instanceof Error ? err.message : "Something went wrong. Please try again."
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
       );
       setLoading(false);
     }
@@ -176,7 +200,6 @@ export default function CheckoutPage() {
       <form onSubmit={handleSubmit}>
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            {/* Customer Info */}
             <Card>
               <CardHeader>
                 <CardTitle>Contact Information</CardTitle>
@@ -206,19 +229,21 @@ export default function CheckoutPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">
+                    Email {paymentMethod === "PAYSTACK" ? "*" : ""}
+                  </Label>
                   <Input
                     id="email"
                     name="email"
                     type="email"
                     value={form.email}
                     onChange={handleChange}
+                    required={paymentMethod === "PAYSTACK"}
                   />
                 </div>
               </CardContent>
             </Card>
 
-            {/* Shipping Address */}
             <Card>
               <CardHeader>
                 <CardTitle>Delivery Address</CardTitle>
@@ -277,7 +302,6 @@ export default function CheckoutPage() {
               </CardContent>
             </Card>
 
-            {/* Payment Method */}
             <Card>
               <CardHeader>
                 <CardTitle>Payment Method</CardTitle>
@@ -309,7 +333,7 @@ export default function CheckoutPage() {
                   <div>
                     <p className="font-medium">Bank Transfer</p>
                     <p className="text-sm text-muted-foreground">
-                      Manual transfer + upload proof
+                      Manual transfer + upload proof later
                     </p>
                   </div>
                 </label>
@@ -317,7 +341,6 @@ export default function CheckoutPage() {
             </Card>
           </div>
 
-          {/* Order Summary */}
           <div className="lg:col-span-1">
             <Card className="sticky top-4">
               <CardHeader>
@@ -342,11 +365,14 @@ export default function CheckoutPage() {
                   size="lg"
                   disabled={loading}
                 >
-                  {loading ? "Placing Order..." : "Place Order"}
+                  {loading
+                    ? paymentMethod === "PAYSTACK"
+                      ? "Redirecting to Paystack..."
+                      : "Placing Order..."
+                    : paymentMethod === "PAYSTACK"
+                    ? "Pay with Paystack"
+                    : "Place Order"}
                 </Button>
-                <p className="text-xs text-center text-muted-foreground">
-                  By placing this order you agree to our terms.
-                </p>
               </CardContent>
             </Card>
           </div>
