@@ -1,78 +1,67 @@
 # VendorFlow — AI-Powered Commerce & Fulfillment Platform
 
-A full-stack commerce automation platform that enables customers to discover products, place and pay for orders, while automating payment verification, inventory confirmation, warehouse fulfillment, delivery coordination, customer notifications, reporting and post-purchase marketing through **n8n**.
+Full-stack commerce platform: storefront, orders, Paystack payments, admin, and email OTP login.
 
 ## Features
 
-- Professional e-commerce storefront with hero images & categories
-- Customer accounts & order tracking
-- Real order creation (orders + order items + payments)
-- Payment method selection (Paystack + Bank Transfer)
-- **Row Level Security (RLS)** on all tables
-- Warehouse stock confirmation workflow (planned)
-- Full order state machine
-- Delivery management (planned)
-- Customer notifications (Email / WhatsApp / SMS) (planned)
-- Admin dashboard with analytics (planned)
-- AI Business Assistant (planned)
-- n8n as the central automation engine
+- Storefront with hero images & product catalog
+- Auth: password login + **email OTP (6-digit code, 50s resend timer)**
+- Cart + real order creation
+- **Paystack** online payments (initialize → pay → verify + webhook)
+- Bank transfer option
+- Account dashboard (profile + orders)
+- **Admin**: dashboard, product list, add product
+- Row Level Security on all tables
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15 (App Router) + TypeScript + Tailwind CSS + shadcn/ui
-- **Backend / Database**: Supabase (PostgreSQL + Auth + Storage + RLS)
-- **Automation**: n8n
-- **Payments**: Paystack / Flutterwave
-- **Notifications**: Resend, WhatsApp Business API, Termii
-
-## Project Structure
-
-```
-vendorflow/
-├── app/
-│   ├── (store)/              # Public customer store
-│   ├── (account)/            # Customer account dashboard
-│   ├── (admin)/              # Admin dashboard
-│   ├── auth/                 # Login / Register
-│   ├── api/                  # API routes (webhooks, etc.)
-│   └── layout.tsx
-├── components/
-│   ├── ui/                   # shadcn components
-│   ├── layout/               # Header, Footer
-│   ├── product/              # ProductCard, AddToCartButton
-│   ├── auth/                 # SignOutButton
-│   └── ...
-├── lib/
-│   ├── supabase/             # Supabase clients
-│   ├── store/                # Zustand cart store
-│   └── utils.ts
-├── supabase/
-│   └── migrations/           # SQL schema + seed + RLS
-└── n8n/
-```
+- Next.js 15 + TypeScript + Tailwind + shadcn/ui
+- Supabase (Auth, PostgreSQL, RLS)
+- Paystack
 
 ## Getting Started
 
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Create a Supabase project at https://supabase.com
-4. Run the migrations **in order** in the Supabase SQL Editor:
+1. `git pull && npm install`
+2. Create a Supabase project
+3. Run migrations **in order** in SQL Editor:
    - `001_initial_schema.sql`
    - `002_vendors_and_cart.sql`
-   - `003_seed_data.sql`        ← demo products + categories
-   - `004_rls_policies.sql`     ← Row Level Security (important!)
-5. Copy `.env.local.example` to `.env.local` and fill in:
+   - `003_seed_data.sql`
+   - `004_rls_policies.sql`
+4. Copy `.env.local.example` → `.env.local` and fill:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=
+   SUPABASE_SERVICE_ROLE_KEY=
+   NEXT_PUBLIC_APP_URL=http://localhost:3000
+   NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=pk_test_...
+   PAYSTACK_SECRET_KEY=sk_test_...
    ```
-   NEXT_PUBLIC_SUPABASE_URL=your_project_url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-   ```
-6. Run the development server: `npm run dev`
-7. Open http://localhost:3000
+5. **Supabase Auth settings** (for OTP):
+   - Authentication → Providers → Email → enable Email OTP / magic link
+   - Authentication → Email Templates (optional customize)
+   - OTP expiry: set as low as allowed (e.g. 60 seconds). UI resend timer is **50 seconds**.
+6. **Paystack webhook** (production):
+   - Dashboard → Settings → API → Webhooks
+   - URL: `https://your-domain.com/api/paystack/webhook`
+7. Make yourself admin: Table Editor → `profiles` → set `role` = `admin`
+8. `npm run dev` → http://localhost:3000
 
-### Making yourself an Admin
+### Routes
 
-After registering, go to Supabase → Table Editor → `profiles` and change your `role` to `admin`.
+| Path | Description |
+|------|-------------|
+| `/` | Store homepage |
+| `/products` | Catalog |
+| `/cart` | Cart |
+| `/checkout` | Checkout + Paystack |
+| `/auth/login` | Password or Email Code |
+| `/account` | Customer dashboard |
+| `/admin` | Admin dashboard (admin role) |
+| `/admin/products` | Manage products |
+| `/admin/products/new` | Add product |
+| `/payment/callback` | Paystack return URL |
 
 ---
 
-**Status**: Storefront + Auth + Cart + Real Orders + Account + RLS complete
+**Status**: Storefront · Auth (password + OTP) · Cart · Orders · Paystack · Admin products · RLS
