@@ -98,7 +98,7 @@ INSERT INTO public.products (
   10,
   'ACTIVE',
   true,
-  '["https://images.unsplash.com/photo-1620916567455-1b8c0c0c0c0c?w=800&q=80", "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=800&q=80"]'::jsonb
+  '["https://images.unsplash.com/photo-1556228578-0d85b1a4d571?w=800&q=80"]'::jsonb
 ),
 (
   'b6666666-6666-6666-6666-666666666666',
