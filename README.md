@@ -8,6 +8,7 @@ A full-stack commerce automation platform that enables customers to discover pro
 - Customer accounts & order tracking
 - Real order creation (orders + order items + payments)
 - Payment method selection (Paystack + Bank Transfer)
+- **Row Level Security (RLS)** on all tables
 - Warehouse stock confirmation workflow (planned)
 - Full order state machine
 - Delivery management (planned)
@@ -19,7 +20,7 @@ A full-stack commerce automation platform that enables customers to discover pro
 ## Tech Stack
 
 - **Frontend**: Next.js 15 (App Router) + TypeScript + Tailwind CSS + shadcn/ui
-- **Backend / Database**: Supabase (PostgreSQL + Auth + Storage)
+- **Backend / Database**: Supabase (PostgreSQL + Auth + Storage + RLS)
 - **Automation**: n8n
 - **Payments**: Paystack / Flutterwave
 - **Notifications**: Resend, WhatsApp Business API, Termii
@@ -37,21 +38,17 @@ vendorflow/
 │   └── layout.tsx
 ├── components/
 │   ├── ui/                   # shadcn components
-│   ├── layout/               # Header, Footer, Sidebar
-│   ├── product/              # ProductCard, Gallery, etc.
-│   ├── order/                # OrderCard, Timeline, StatusBadge
-│   ├── cart/
-│   ├── account/
-│   └── admin/
+│   ├── layout/               # Header, Footer
+│   ├── product/              # ProductCard, AddToCartButton
+│   ├── auth/                 # SignOutButton
+│   └── ...
 ├── lib/
 │   ├── supabase/             # Supabase clients
 │   ├── store/                # Zustand cart store
 │   └── utils.ts
-├── types/
-├── hooks/
 ├── supabase/
-│   └── migrations/           # SQL schema + seed files
-└── n8n/                      # n8n workflow exports (optional)
+│   └── migrations/           # SQL schema + seed + RLS
+└── n8n/
 ```
 
 ## Getting Started
@@ -59,10 +56,11 @@ vendorflow/
 1. Clone the repository
 2. Install dependencies: `npm install`
 3. Create a Supabase project at https://supabase.com
-4. Run the migrations in order in the Supabase SQL Editor:
-   - `supabase/migrations/001_initial_schema.sql`
-   - `supabase/migrations/002_vendors_and_cart.sql`
-   - `supabase/migrations/003_seed_data.sql`  ← demo products + categories
+4. Run the migrations **in order** in the Supabase SQL Editor:
+   - `001_initial_schema.sql`
+   - `002_vendors_and_cart.sql`
+   - `003_seed_data.sql`        ← demo products + categories
+   - `004_rls_policies.sql`     ← Row Level Security (important!)
 5. Copy `.env.local.example` to `.env.local` and fill in:
    ```
    NEXT_PUBLIC_SUPABASE_URL=your_project_url
@@ -71,13 +69,10 @@ vendorflow/
 6. Run the development server: `npm run dev`
 7. Open http://localhost:3000
 
-### Important Notes
+### Making yourself an Admin
 
-- The seed file adds 8 sample products with Unsplash images so the store looks real immediately.
-- Checkout now creates real rows in `orders`, `order_items` and `payments`.
-- Account page (`/account`) shows welcome message, profile info and the user’s order history.
-- For production you should add Row Level Security (RLS) policies and a proper Paystack webhook.
+After registering, go to Supabase → Table Editor → `profiles` and change your `role` to `admin`.
 
 ---
 
-**Status**: Phase 1 complete + Storefront + Cart + Real Orders + Account Dashboard
+**Status**: Storefront + Auth + Cart + Real Orders + Account + RLS complete
