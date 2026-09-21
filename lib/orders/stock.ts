@@ -1,54 +1,53 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+export type DeductStockResult = {
+  ok: boolean;
+  already_processed?: boolean;
+  error?: string;
+  failures?: Array<{
+    product_id?: string;
+    variant_id?: string | null;
+    product_name?: string;
+    requested?: number;
+    available?: number;
+  }>;
+  remaining?: Array<{
+    product_id?: string;
+    variant_id?: string | null;
+    product_name?: string;
+    remaining?: number;
+    low_stock?: boolean;
+    out_of_stock?: boolean;
+    threshold?: number;
+  }>;
+};
+
 /**
- * Decrement product and variant stock for a paid order.
- * Safe to call only once per order (caller should check payment_status).
+ * Atomic stock deduction via Postgres RPC (prevents overselling).
  */
+export async function deductOrderStockAtomic(
+  admin: SupabaseClient,
+  orderId: string
+): Promise<DeductStockResult> {
+  const { data, error } = await admin.rpc("deduct_order_stock", {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    console.error("[stock] RPC error", error);
+    return { ok: false, error: error.message };
+  }
+
+  return (data || { ok: false, error: "EMPTY_RPC_RESULT" }) as DeductStockResult;
+}
+
+/** @deprecated Prefer deductOrderStockAtomic */
 export async function decrementStockForOrder(
   admin: SupabaseClient,
   orderId: string
 ): Promise<void> {
-  const { data: items } = await admin
-    .from("order_items")
-    .select("product_id, variant_id, quantity")
-    .eq("order_id", orderId);
-
-  if (!items?.length) return;
-
-  for (const item of items) {
-    const qty = Number(item.quantity) || 0;
-    if (qty <= 0) continue;
-
-    if (item.variant_id) {
-      const { data: variant } = await admin
-        .from("product_variants")
-        .select("id, stock_quantity")
-        .eq("id", item.variant_id)
-        .maybeSingle();
-
-      if (variant) {
-        const next = Math.max(0, (variant.stock_quantity ?? 0) - qty);
-        await admin
-          .from("product_variants")
-          .update({ stock_quantity: next })
-          .eq("id", variant.id);
-      }
-    }
-
-    if (item.product_id) {
-      const { data: product } = await admin
-        .from("products")
-        .select("id, stock_quantity")
-        .eq("id", item.product_id)
-        .maybeSingle();
-
-      if (product) {
-        const next = Math.max(0, (product.stock_quantity ?? 0) - qty);
-        await admin
-          .from("products")
-          .update({ stock_quantity: next })
-          .eq("id", product.id);
-      }
-    }
+  const result = await deductOrderStockAtomic(admin, orderId);
+  if (!result.ok && !result.already_processed) {
+    throw new Error(result.error || "Stock deduction failed");
   }
 }
