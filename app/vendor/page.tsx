@@ -99,7 +99,10 @@ export default async function VendorDashboardPage() {
             <Button variant="outline">View store</Button>
           </Link>
           <Link href="/vendor/products">
-            <Button variant="outline">Manage products</Button>
+            <Button variant="outline">My Products</Button>
+          </Link>
+          <Link href="/vendor/orders">
+            <Button variant="outline">My Orders</Button>
           </Link>
           {vendor.status === "APPROVED" && (
             <Link href="/vendor/products/new">
@@ -118,7 +121,7 @@ export default async function VendorDashboardPage() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Products</CardDescription>
+            <CardDescription>My Products</CardDescription>
             <CardTitle className="text-3xl">{list.length}</CardTitle>
           </CardHeader>
         </Card>
@@ -158,7 +161,10 @@ export default async function VendorDashboardPage() {
 
       <div className="flex flex-wrap gap-3">
         <Link href="/vendor/products">
-          <Button>Manage products</Button>
+          <Button>My Products</Button>
+        </Link>
+        <Link href="/vendor/orders">
+          <Button variant="outline">My Orders</Button>
         </Link>
         <Link href="/vendor/products?stock=low">
           <Button variant="outline">Low stock list</Button>
