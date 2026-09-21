@@ -270,7 +270,8 @@ export default function VendorEditProductPage() {
                 <Label htmlFor="sku">SKU *</Label>
                 <Input
                   id="sku"
-                  name="sku"	ienne                  value={form.sku}
+                  name="sku"
+                  value={form.sku}
                   onChange={handleChange}
                   required
                 />
