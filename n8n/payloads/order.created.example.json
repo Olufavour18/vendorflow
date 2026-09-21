@@ -1,0 +1,9 @@
+{
+  "event": "order.created",
+  "order_id": "00000000-0000-0000-0000-000000000001",
+  "order_number": "ORD-10001",
+  "payment_method": "BANK_TRANSFER",
+  "payment_status": "PENDING",
+  "order_status": "PENDING_PAYMENT",
+  "timestamp": "2026-09-21T12:00:00.000Z"
+}
