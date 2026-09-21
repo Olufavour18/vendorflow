@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { formatSupabaseError } from "@/lib/supabase-errors";
+import { ProductImageUpload } from "@/components/admin/product-image-upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,7 +44,9 @@ export default function NewProductPage() {
   });
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
@@ -56,9 +60,7 @@ export default function NewProductPage() {
 
     try {
       const slug = slugify(form.name);
-      const images = form.imageUrl.trim()
-        ? [form.imageUrl.trim()]
-        : [];
+      const images = form.imageUrl.trim() ? [form.imageUrl.trim()] : [];
 
       const { error: insertError } = await supabase.from("products").insert({
         name: form.name,
@@ -78,7 +80,7 @@ export default function NewProductPage() {
       });
 
       if (insertError) {
-        throw new Error(insertError.message);
+        throw new Error(formatSupabaseError(insertError));
       }
 
       router.push("/admin/products");
@@ -191,20 +193,12 @@ export default function NewProductPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="imageUrl">Image URL</Label>
-              <Input
-                id="imageUrl"
-                name="imageUrl"
-                type="url"
-                value={form.imageUrl}
-                onChange={handleChange}
-                placeholder="https://images.unsplash.com/..."
-              />
-              <p className="text-xs text-muted-foreground">
-                Paste a direct image link (Unsplash, Cloudinary, etc.)
-              </p>
-            </div>
+            <ProductImageUpload
+              value={form.imageUrl}
+              onChange={(url) =>
+                setForm((prev) => ({ ...prev, imageUrl: url }))
+              }
+            />
 
             <div className="space-y-2">
               <Label htmlFor="shortDescription">Short Description</Label>
