@@ -4,9 +4,8 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
+import { DeleteProductButton } from "@/components/admin/delete-product-button";
 
 export default async function AdminProductsPage() {
   const supabase = await createClient();
@@ -66,7 +65,7 @@ export default async function AdminProductsPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3 text-sm">
+                <div className="flex items-center gap-3 text-sm flex-wrap">
                   <span
                     className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
                       product.status === "ACTIVE"
@@ -81,6 +80,15 @@ export default async function AdminProductsPage() {
                   <span className="text-muted-foreground">
                     Stock: {product.stock_quantity}
                   </span>
+                  <Link href={`/admin/products/${product.id}/edit`}>
+                    <Button variant="outline" size="sm">
+                      Edit
+                    </Button>
+                  </Link>
+                  <DeleteProductButton
+                    productId={product.id}
+                    productName={product.name}
+                  />
                 </div>
               </CardContent>
             </Card>
