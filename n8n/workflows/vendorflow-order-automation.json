@@ -1,0 +1,287 @@
+{
+  "name": "VendorFlow Order Automation",
+  "meta": {
+    "description": "Payment events from VendorFlow → Supabase load → atomic stock RPC → notify admin/customer → delivery/pickup → Google Sheets. Webhook body: order_id + event only."
+  },
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "wh-1",
+      "name": "Webhook Order Events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "vendorflow-orders",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vendorflow-orders",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "if-failed",
+      "name": "Is Payment Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.event }}", "operation": "equals", "value2": "payment.failed" }]
+        }
+      }
+    },
+    {
+      "id": "get-order",
+      "name": "Get Order",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [440, 200],
+      "parameters": {
+        "operation": "get",
+        "tableId": "orders",
+        "filters": {
+          "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Webhook Order Events').item.json.order_id }}" }]
+        }
+      }
+    },
+    {
+      "id": "get-items",
+      "name": "Get Order Items",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [660, 200],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "order_items",
+        "returnAll": true,
+        "filters": {
+          "conditions": [{ "keyName": "order_id", "condition": "eq", "keyValue": "={{ $('Webhook Order Events').item.json.order_id }}" }]
+        }
+      }
+    },
+    {
+      "id": "if-paid",
+      "name": "Payment SUCCESS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [880, 200],
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $('Get Order').item.json.payment_status }}", "operation": "equals", "value2": "SUCCESS" }]
+        }
+      }
+    },
+    {
+      "id": "rpc-stock",
+      "name": "Atomic Deduct Stock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/deduct_order_stock",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"p_order_id\": \"{{ $('Webhook Order Events').item.json.order_id }}\"}"
+      }
+    },
+    {
+      "id": "if-stock-ok",
+      "name": "Stock OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1320, 80],
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.ok === true || $json.already_processed === true }}", "value2": true }]
+        }
+      }
+    },
+    {
+      "id": "code-group",
+      "name": "Group By Vendor + Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0],
+      "parameters": {
+        "jsCode": "const order = $('Get Order').first().json;\nconst items = $('Get Order Items').all().map(i => i.json);\nconst stock = $('Atomic Deduct Stock').first().json;\nconst byVendor = {};\nfor (const it of items) { const vid = it.vendor_id || 'unknown'; if (!byVendor[vid]) byVendor[vid] = []; byVendor[vid].push(it); }\nconst low = (stock.remaining || []).filter(r => r.low_stock || r.out_of_stock);\nreturn [{ json: { order_id: order.id, order_number: order.order_number, customer_name: order.customer_name, customer_email: order.customer_email, customer_phone: order.customer_phone, total_amount: order.total_amount, payment_status: order.payment_status, fulfillment_method: order.fulfillment_method || 'DELIVERY', shipping_address: order.shipping_address, items, byVendor, vendorIds: Object.keys(byVendor), lowStock: low, stockResult: stock } }];"
+      }
+    },
+    {
+      "id": "email-admin",
+      "name": "Email Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1760, -120],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.ADMIN_EMAIL }}",
+        "subject": "=VendorFlow: Order {{ $json.order_number }} paid",
+        "text": "=Order {{ $json.order_number }}\nCustomer: {{ $json.customer_name }} {{ $json.customer_phone }}\nTotal: NGN {{ $json.total_amount }}\nFulfillment: {{ $json.fulfillment_method }}\nVendors: {{ $json.vendorIds.join(', ') }}\n"
+      }
+    },
+    {
+      "id": "email-customer",
+      "name": "Email Customer",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1760, 40],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $json.customer_email }}",
+        "subject": "=Order confirmed {{ $json.order_number }}",
+        "text": "=Hi {{ $json.customer_name }},\n\nPayment received for {{ $json.order_number }}. Total: NGN {{ $json.total_amount }}.\nFulfillment: {{ $json.fulfillment_method }}.\n"
+      }
+    },
+    {
+      "id": "if-pickup",
+      "name": "Pickup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1980, -40],
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.fulfillment_method }}", "operation": "equals", "value2": "PICKUP" }]
+        }
+      }
+    },
+    {
+      "id": "email-delivery",
+      "name": "Alert Delivery Staff",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2200, 40],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.DELIVERY_STAFF_EMAIL || $env.ADMIN_EMAIL }}",
+        "subject": "=Delivery {{ $json.order_number }}",
+        "text": "=Deliver {{ $json.order_number }}\n{{ $json.shipping_address.full_name }} {{ $json.shipping_address.phone }}\n{{ $json.shipping_address.address_line1 }}, {{ $json.shipping_address.city }}\n"
+      }
+    },
+    {
+      "id": "email-pickup",
+      "name": "Alert Pickup Staff",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2200, -120],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.WAREHOUSE_EMAIL || $env.ADMIN_EMAIL }}",
+        "subject": "=Pickup {{ $json.order_number }}",
+        "text": "=Pickup order {{ $json.order_number }} — {{ $json.customer_name }} {{ $json.customer_phone }}\n"
+      }
+    },
+    {
+      "id": "sheets",
+      "name": "Append Sales Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2420, -40],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $env.GOOGLE_SHEETS_SALES_ID }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "Sales" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "order_number": "={{ $json.order_number }}",
+            "order_id": "={{ $json.order_id }}",
+            "customer": "={{ $json.customer_name }}",
+            "total": "={{ $json.total_amount }}",
+            "payment_status": "={{ $json.payment_status }}",
+            "fulfillment": "={{ $json.fulfillment_method }}",
+            "item_count": "={{ $json.items.length }}",
+            "date": "={{ $now.toISO() }}"
+          }
+        }
+      }
+    },
+    {
+      "id": "email-bank",
+      "name": "Admin Bank Transfer Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1100, 280],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.ADMIN_EMAIL }}",
+        "subject": "=Bank transfer pending {{ $('Get Order').item.json.order_number }}",
+        "text": "=Awaiting bank confirmation. Do NOT treat as paid until payment_status=SUCCESS.\nOrder {{ $('Get Order').item.json.order_number }} — {{ $('Get Order').item.json.customer_name }} — NGN {{ $('Get Order').item.json.total_amount }}\n"
+      }
+    },
+    {
+      "id": "email-stock-fail",
+      "name": "Admin Stock Failure",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1540, 160],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.ADMIN_EMAIL }}",
+        "subject": "=Stock issue order {{ $('Webhook Order Events').item.json.order_id }}",
+        "text": "=Stock RPC failed or insufficient.\n{{ JSON.stringify($json) }}\n"
+      }
+    },
+    {
+      "id": "email-pay-fail",
+      "name": "Admin Payment Failed",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [440, 420],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.ADMIN_EMAIL }}",
+        "subject": "=Payment failed {{ $json.order_id }}",
+        "text": "=Payment failed. No stock change. Order {{ $json.order_id }}\n"
+      }
+    },
+    {
+      "id": "if-low",
+      "name": "Any Low Stock?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1760, 200],
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $json.lowStock.length }}", "operation": "larger", "value2": 0 }]
+        }
+      }
+    },
+    {
+      "id": "email-low",
+      "name": "Low Stock Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1980, 280],
+      "parameters": {
+        "fromEmail": "={{ $env.NOTIFICATION_FROM_EMAIL || 'orders@vendorflow.local' }}",
+        "toEmail": "={{ $env.ADMIN_EMAIL }}",
+        "subject": "=Low stock after {{ $json.order_number }}",
+        "text": "={{ JSON.stringify($json.lowStock, null, 2) }}\n"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Order Events": { "main": [[{ "node": "Is Payment Failed?", "type": "main", "index": 0 }]] },
+    "Is Payment Failed?": { "main": [[{ "node": "Admin Payment Failed", "type": "main", "index": 0 }], [{ "node": "Get Order", "type": "main", "index": 0 }]] },
+    "Get Order": { "main": [[{ "node": "Get Order Items", "type": "main", "index": 0 }]] },
+    "Get Order Items": { "main": [[{ "node": "Payment SUCCESS?", "type": "main", "index": 0 }]] },
+    "Payment SUCCESS?": { "main": [[{ "node": "Atomic Deduct Stock", "type": "main", "index": 0 }], [{ "node": "Admin Bank Transfer Alert", "type": "main", "index": 0 }]] },
+    "Atomic Deduct Stock": { "main": [[{ "node": "Stock OK?", "type": "main", "index": 0 }]] },
+    "Stock OK?": { "main": [[{ "node": "Group By Vendor + Context", "type": "main", "index": 0 }], [{ "node": "Admin Stock Failure", "type": "main", "index": 0 }]] },
+    "Group By Vendor + Context": { "main": [[{ "node": "Email Admin", "type": "main", "index": 0 }, { "node": "Email Customer", "type": "main", "index": 0 }, { "node": "Any Low Stock?", "type": "main", "index": 0 }, { "node": "Pickup?", "type": "main", "index": 0 }]] },
+    "Pickup?": { "main": [[{ "node": "Alert Pickup Staff", "type": "main", "index": 0 }], [{ "node": "Alert Delivery Staff", "type": "main", "index": 0 }]] },
+    "Alert Delivery Staff": { "main": [[{ "node": "Append Sales Sheet", "type": "main", "index": 0 }]] },
+    "Alert Pickup Staff": { "main": [[{ "node": "Append Sales Sheet", "type": "main", "index": 0 }]] },
+    "Any Low Stock?": { "main": [[{ "node": "Low Stock Alert", "type": "main", "index": 0 }], []] }
+  }
+}
