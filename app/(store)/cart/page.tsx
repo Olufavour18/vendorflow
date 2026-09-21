@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCart } from "@/lib/store/cart";
+import { useCart, cartLineKey } from "@/lib/store/cart";
 import { Button } from "@/components/ui/button";
 
 export default function CartPage() {
@@ -25,75 +25,84 @@ export default function CartPage() {
 
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="flex gap-4 p-4 border rounded-lg"
-            >
-              <div className="w-20 h-20 bg-muted rounded overflow-hidden shrink-0">
-                {item.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
-                    No img
-                  </div>
-                )}
-              </div>
+          {items.map((item) => {
+            const key = cartLineKey(item);
+            return (
+              <div key={key} className="flex gap-4 p-4 border rounded-lg">
+                <div className="w-20 h-20 bg-muted rounded overflow-hidden shrink-0">
+                  {item.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                      No img
+                    </div>
+                  )}
+                </div>
 
-              <div className="flex-1 min-w-0">
-                <Link
-                  href={`/products/${item.slug}`}
-                  className="font-medium hover:underline line-clamp-1"
-                >
-                  {item.name}
-                </Link>
-                <p className="text-sm text-muted-foreground">
-                  ₦{item.price.toLocaleString()}
-                </p>
-
-                <div className="flex items-center gap-3 mt-2">
-                  <div className="flex items-center border rounded">
-                    <button
-                      type="button"
-                      className="px-2 py-1 hover:bg-muted"
-                      onClick={() =>
-                        updateQuantity(item.id, item.quantity - 1)
-                      }
-                    >
-                      −
-                    </button>
-                    <span className="px-3 py-1 text-sm">{item.quantity}</span>
-                    <button
-                      type="button"
-                      className="px-2 py-1 hover:bg-muted"
-                      onClick={() =>
-                        updateQuantity(item.id, item.quantity + 1)
-                      }
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="text-sm text-destructive hover:underline"
-                    onClick={() => removeItem(item.id)}
+                <div className="flex-1 min-w-0">
+                  <Link
+                    href={`/products/${item.slug}`}
+                    className="font-medium hover:underline line-clamp-1"
                   >
-                    Remove
-                  </button>
+                    {item.name}
+                  </Link>
+                  {item.variantLabel && (
+                    <p className="text-sm text-muted-foreground">
+                      {item.variantLabel}
+                      {item.variantSku && ` · ${item.variantSku}`}
+                    </p>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    ₦{item.price.toLocaleString()}
+                  </p>
+
+                  <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center border rounded">
+                      <button
+                        type="button"
+                        className="px-2 py-1 hover:bg-muted"
+                        onClick={() => updateQuantity(key, item.quantity - 1)}
+                      >
+                        −
+                      </button>
+                      <span className="px-3 py-1 text-sm">{item.quantity}</span>
+                      <button
+                        type="button"
+                        className="px-2 py-1 hover:bg-muted"
+                        onClick={() =>
+                          updateQuantity(
+                            key,
+                            item.maxStock != null
+                              ? Math.min(item.maxStock, item.quantity + 1)
+                              : item.quantity + 1
+                          )
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="text-sm text-destructive hover:underline"
+                      onClick={() => removeItem(key)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-right font-medium">
+                  ₦{(item.price * item.quantity).toLocaleString()}
                 </div>
               </div>
-
-              <div className="text-right font-medium">
-                ₦{(item.price * item.quantity).toLocaleString()}
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           <Button variant="outline" onClick={clearCart}>
             Clear Cart
