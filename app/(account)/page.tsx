@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { AddressBook } from "@/components/account/address-book";
 
 export default async function AccountPage({
   searchParams,
@@ -28,14 +29,12 @@ export default async function AccountPage({
   const params = await searchParams;
   const orderSuccess = params.order === "success";
 
-  // Profile
   const { data: profile } = await supabase
     .from("profiles")
     .select("full_name, phone, role, created_at")
     .eq("id", user.id)
     .single();
 
-  // Orders
   const { data: orders } = await supabase
     .from("orders")
     .select(
@@ -48,11 +47,12 @@ export default async function AccountPage({
   const displayName =
     profile?.full_name || user.user_metadata?.full_name || user.email || "there";
 
+  const role = profile?.role || "customer";
+
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      {/* Success banner */}
+    <div className="container mx-auto px-4 py-8 max-w-4xl space-y-8">
       {orderSuccess && (
-        <div className="mb-6 p-4 rounded-lg bg-green-50 border border-green-200 text-green-800">
+        <div className="p-4 rounded-lg bg-green-50 border border-green-200 text-green-800">
           <p className="font-medium">Order placed successfully! 🎉</p>
           <p className="text-sm mt-1">
             You can track it below. We will notify you when payment is confirmed.
@@ -60,21 +60,52 @@ export default async function AccountPage({
         </div>
       )}
 
-      {/* Welcome */}
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
             Welcome back, {displayName.split(" ")[0]}!
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage your orders and account details
+            Manage your orders, addresses and account
           </p>
         </div>
         <SignOutButton variant="outline">Sign Out</SignOutButton>
       </div>
 
+      {/* Role shortcuts */}
+      <div className="flex flex-wrap gap-2">
+        {role === "admin" && (
+          <Link href="/admin">
+            <Button size="sm">Admin panel</Button>
+          </Link>
+        )}
+        {(role === "admin" ||
+          role === "warehouse" ||
+          role === "delivery" ||
+          role === "support") && (
+          <Link href="/staff">
+            <Button size="sm" variant="outline">
+              Staff board
+            </Button>
+          </Link>
+        )}
+        {role === "vendor" && (
+          <Link href="/vendor">
+            <Button size="sm" variant="outline">
+              Vendor dashboard
+            </Button>
+          </Link>
+        )}
+        {role === "customer" && (
+          <Link href="/vendor/register">
+            <Button size="sm" variant="outline">
+              Become a vendor
+            </Button>
+          </Link>
+        )}
+      </div>
+
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Profile card */}
         <Card className="md:col-span-1">
           <CardHeader>
             <CardTitle className="text-lg">Your Profile</CardTitle>
@@ -95,22 +126,18 @@ export default async function AccountPage({
             </div>
             <div>
               <p className="text-muted-foreground">Role</p>
-              <p className="font-medium capitalize">{profile?.role || "customer"}</p>
+              <p className="font-medium capitalize">{role}</p>
             </div>
-            <div className="pt-2 space-y-2">
+            <div className="pt-2">
               <Link href="/products">
                 <Button variant="outline" size="sm" className="w-full">
                   Continue Shopping
                 </Button>
               </Link>
-              <SignOutButton variant="ghost" size="sm" className="w-full">
-                Sign Out
-              </SignOutButton>
             </div>
           </CardContent>
         </Card>
 
-        {/* Orders */}
         <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle className="text-lg">Your Orders</CardTitle>
@@ -175,6 +202,8 @@ export default async function AccountPage({
           </CardContent>
         </Card>
       </div>
+
+      <AddressBook />
     </div>
   );
 }
