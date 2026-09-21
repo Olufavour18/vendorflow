@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type CartItem = {
+  /** Product id (always present) */
   id: string;
   name: string;
   slug: string;
@@ -9,13 +10,28 @@ export type CartItem = {
   image?: string;
   quantity: number;
   sku?: string;
+  /** When set, this line is a specific variant of the product */
+  variantId?: string;
+  /** Human label e.g. "Large / 5kg" for display & order snapshot */
+  variantLabel?: string;
+  variantSku?: string;
+  /** Stock available for this line (product or variant) at add time */
+  maxStock?: number;
 };
+
+/** Unique key for a cart line: product alone or product+variant */
+export function cartLineKey(item: {
+  id: string;
+  variantId?: string | null;
+}): string {
+  return item.variantId ? `${item.id}::${item.variantId}` : item.id;
+}
 
 type CartState = {
   items: CartItem[];
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
+  removeItem: (lineKey: string) => void;
+  updateQuantity: (lineKey: string, quantity: number) => void;
   clearCart: () => void;
   totalItems: () => number;
   totalPrice: () => number;
@@ -27,34 +43,46 @@ export const useCart = create<CartState>()(
       items: [],
 
       addItem: (item) => {
-        const existing = get().items.find((i) => i.id === item.id);
+        const key = cartLineKey(item);
+        const existing = get().items.find((i) => cartLineKey(i) === key);
         if (existing) {
           set({
             items: get().items.map((i) =>
-              i.id === item.id
-                ? { ...i, quantity: i.quantity + (item.quantity || 1) }
+              cartLineKey(i) === key
+                ? {
+                    ...i,
+                    quantity: i.quantity + (item.quantity || 1),
+                    // Prefer newer price/stock snapshot
+                    price: item.price,
+                    maxStock: item.maxStock ?? i.maxStock,
+                  }
                 : i
             ),
           });
         } else {
           set({
-            items: [...get().items, { ...item, quantity: item.quantity || 1 }],
+            items: [
+              ...get().items,
+              { ...item, quantity: item.quantity || 1 },
+            ],
           });
         }
       },
 
-      removeItem: (id) => {
-        set({ items: get().items.filter((i) => i.id !== id) });
+      removeItem: (lineKey) => {
+        set({
+          items: get().items.filter((i) => cartLineKey(i) !== lineKey),
+        });
       },
 
-      updateQuantity: (id, quantity) => {
+      updateQuantity: (lineKey, quantity) => {
         if (quantity <= 0) {
-          get().removeItem(id);
+          get().removeItem(lineKey);
           return;
         }
         set({
           items: get().items.map((i) =>
-            i.id === id ? { ...i, quantity } : i
+            cartLineKey(i) === lineKey ? { ...i, quantity } : i
           ),
         });
       },
