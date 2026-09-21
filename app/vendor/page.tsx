@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getExpiryStatus, isLowStock } from "@/lib/product-utils";
 
 export default async function VendorDashboardPage() {
   const supabase = await createClient();
@@ -30,13 +31,53 @@ export default async function VendorDashboardPage() {
     redirect("/vendor/register");
   }
 
-  const { data: products, count: productCount } = await supabase
+  const { data: products } = await supabase
     .from("products")
-    .select("id, name, sku, price, stock_quantity, status, images", {
-      count: "exact",
-    })
-    .eq("vendor_id", vendor.id)
-    .order("created_at", { ascending: false });
+    .select(
+      "id, name, status, stock_quantity, low_stock_threshold, expires_at, product_variants(stock_quantity, low_stock_threshold, expires_at)"
+    )
+    .eq("vendor_id", vendor.id);
+
+  const list = products || [];
+  let lowStock = 0;
+  let outOfStock = 0;
+  let nearExpiry = 0;
+  let active = 0;
+  let inactive = 0;
+
+  for (const p of list) {
+    if (p.status === "ACTIVE") active++;
+    if (p.status === "INACTIVE" || p.status === "DRAFT" || p.status === "ARCHIVED")
+      inactive++;
+
+    const variants = (p.product_variants as {
+      stock_quantity: number;
+      low_stock_threshold: number | null;
+      expires_at: string | null;
+    }[]) || [];
+
+    const stock =
+      variants.length > 0
+        ? variants.reduce((s, v) => s + v.stock_quantity, 0)
+        : p.stock_quantity;
+
+    if (stock <= 0) outOfStock++;
+    else if (
+      variants.length > 0
+        ? variants.some((v) =>
+            isLowStock(v.stock_quantity, v.low_stock_threshold)
+          )
+        : isLowStock(p.stock_quantity, p.low_stock_threshold)
+    ) {
+      lowStock++;
+    }
+
+    const dates = [
+      p.expires_at,
+      ...variants.map((v) => v.expires_at),
+    ].filter(Boolean) as string[];
+    if (dates.some((d) => getExpiryStatus(d) === "near_expiry")) nearExpiry++;
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl space-y-8">
@@ -53,9 +94,12 @@ export default async function VendorDashboardPage() {
             {vendor.city ? ` · ${vendor.city}, ${vendor.state}` : ""}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href="/">
             <Button variant="outline">View store</Button>
+          </Link>
+          <Link href="/vendor/products">
+            <Button variant="outline">Manage products</Button>
           </Link>
           {vendor.status === "APPROVED" && (
             <Link href="/vendor/products/new">
@@ -67,77 +111,61 @@ export default async function VendorDashboardPage() {
 
       {vendor.status === "PENDING" && (
         <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-900 text-sm">
-          Your vendor account is pending admin approval. You will be able to
-          list products once approved.
+          Your vendor account is pending admin approval.
         </div>
       )}
 
-      {vendor.status === "SUSPENDED" && (
-        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm">
-          Your vendor account is suspended. Contact support.
-        </div>
-      )}
-
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Your products</CardDescription>
-            <CardTitle className="text-3xl">{productCount ?? 0}</CardTitle>
+            <CardDescription>Products</CardDescription>
+            <CardTitle className="text-3xl">{list.length}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Vendor slug</CardDescription>
-            <CardTitle className="text-lg font-mono">{vendor.slug}</CardTitle>
+            <CardDescription>Active</CardDescription>
+            <CardTitle className="text-3xl">{active}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Inactive / draft</CardDescription>
+            <CardTitle className="text-3xl">{inactive}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Low stock</CardDescription>
+            <CardTitle className="text-3xl text-yellow-700">{lowStock}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Out of stock</CardDescription>
+            <CardTitle className="text-3xl text-red-700">{outOfStock}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Near expiry</CardDescription>
+            <CardTitle className="text-3xl text-orange-700">
+              {nearExpiry}
+            </CardTitle>
           </CardHeader>
         </Card>
       </div>
 
-      <div>
-        <h2 className="text-xl font-semibold mb-4">Products</h2>
-        {!products || products.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center text-muted-foreground">
-              No products yet.
-              {vendor.status === "APPROVED" && (
-                <div className="mt-4">
-                  <Link href="/vendor/products/new">
-                    <Button>Add your first product</Button>
-                  </Link>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {products.map((p) => (
-              <Card key={p.id}>
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="w-14 h-14 rounded bg-muted overflow-hidden shrink-0">
-                    {p.images?.[0] ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.images[0]}
-                        alt={p.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : null}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{p.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {p.sku} · ₦{Number(p.price).toLocaleString()} · Stock{" "}
-                      {p.stock_quantity}
-                    </p>
-                  </div>
-                  <span className="text-xs rounded-full px-2 py-0.5 bg-muted">
-                    {p.status}
-                  </span>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+      <div className="flex flex-wrap gap-3">
+        <Link href="/vendor/products">
+          <Button>Manage products</Button>
+        </Link>
+        <Link href="/vendor/products?stock=low">
+          <Button variant="outline">Low stock list</Button>
+        </Link>
+        <Link href="/vendor/products?expiry=near">
+          <Button variant="outline">Near expiry</Button>
+        </Link>
       </div>
     </div>
   );
