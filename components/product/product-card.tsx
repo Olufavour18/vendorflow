@@ -13,6 +13,7 @@ type ProductCardProps = {
   image?: string;
   stock_quantity?: number;
   sku?: string;
+  vendorName?: string;
 };
 
 export function ProductCard({
@@ -23,6 +24,7 @@ export function ProductCard({
   image,
   stock_quantity = 0,
   sku,
+  vendorName,
 }: ProductCardProps) {
   const addItem = useCart((state) => state.addItem);
 
@@ -52,6 +54,9 @@ export function ProductCard({
         <Link href={`/products/${slug}`}>
           <h3 className="font-medium line-clamp-2 hover:underline">{name}</h3>
         </Link>
+        {vendorName && (
+          <p className="text-xs text-muted-foreground mt-1">{vendorName}</p>
+        )}
         <p className="mt-1 text-lg font-semibold">
           ₦{price.toLocaleString()}
         </p>
@@ -65,7 +70,7 @@ export function ProductCard({
           onClick={handleAddToCart}
           disabled={stock_quantity <= 0}
         >
-          Add to Cart
+          {stock_quantity <= 0 ? "Out of Stock" : "Add to Cart"}
         </Button>
       </CardFooter>
     </Card>
