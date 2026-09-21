@@ -54,6 +54,12 @@ export default async function AdminLayout({
                 Products
               </Link>
               <Link
+                href="/admin/categories"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Categories
+              </Link>
+              <Link
                 href="/admin/products/new"
                 className="text-muted-foreground hover:text-foreground"
               >

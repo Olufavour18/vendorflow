@@ -16,6 +16,7 @@ export default async function AdminDashboard() {
     { count: productCount },
     { count: orderCount },
     { count: pendingOrders },
+    { count: categoryCount },
   ] = await Promise.all([
     supabase
       .from("products")
@@ -25,6 +26,9 @@ export default async function AdminDashboard() {
       .from("orders")
       .select("*", { count: "exact", head: true })
       .eq("payment_status", "PENDING"),
+    supabase
+      .from("categories")
+      .select("*", { count: "exact", head: true }),
   ]);
 
   return (
@@ -36,7 +40,7 @@ export default async function AdminDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Link href="/admin/products">
           <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
             <CardHeader className="pb-2">
@@ -61,6 +65,14 @@ export default async function AdminDashboard() {
             </CardHeader>
           </Card>
         </Link>
+        <Link href="/admin/categories">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardDescription>Categories</CardDescription>
+              <CardTitle className="text-3xl">{categoryCount ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -72,6 +84,9 @@ export default async function AdminDashboard() {
         </Link>
         <Link href="/admin/products/new">
           <Button variant="outline">Add New Product</Button>
+        </Link>
+        <Link href="/admin/categories">
+          <Button variant="outline">Manage Categories</Button>
         </Link>
       </div>
     </div>
