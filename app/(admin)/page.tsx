@@ -37,29 +37,38 @@ export default async function AdminDashboard() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Products</CardDescription>
-            <CardTitle className="text-3xl">{productCount ?? 0}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Orders</CardDescription>
-            <CardTitle className="text-3xl">{orderCount ?? 0}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Pending Payments</CardDescription>
-            <CardTitle className="text-3xl">{pendingOrders ?? 0}</CardTitle>
-          </CardHeader>
-        </Card>
+        <Link href="/admin/products">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardDescription>Total Products</CardDescription>
+              <CardTitle className="text-3xl">{productCount ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/admin/orders">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardDescription>Total Orders</CardDescription>
+              <CardTitle className="text-3xl">{orderCount ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/admin/orders?status=PENDING_PAYMENT">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardDescription>Pending Payments</CardDescription>
+              <CardTitle className="text-3xl">{pendingOrders ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
 
       <div className="flex flex-wrap gap-3">
+        <Link href="/admin/orders">
+          <Button>Manage Orders</Button>
+        </Link>
         <Link href="/admin/products">
-          <Button>Manage Products</Button>
+          <Button variant="outline">Manage Products</Button>
         </Link>
         <Link href="/admin/products/new">
           <Button variant="outline">Add New Product</Button>
