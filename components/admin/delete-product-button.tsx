@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { formatSupabaseError } from "@/lib/supabase-errors";
 import { Button } from "@/components/ui/button";
 
 export function DeleteProductButton({
@@ -24,13 +25,45 @@ export function DeleteProductButton({
     setLoading(true);
     const supabase = createClient();
 
-    const { error } = await supabase
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert(
+        formatSupabaseError(
+          authError,
+          "Session expired. Please log in again."
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
+    const { data: deletedRows, error } = await supabase
       .from("products")
       .delete()
-      .eq("id", productId);
+      .eq("id", productId)
+      .select("id");
 
     if (error) {
-      alert(error.message || "Failed to delete product");
+      alert(
+        formatSupabaseError(
+          error,
+          "Failed to delete product. Check your admin role and try again."
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
+    // RLS can return success with 0 rows when policy blocks the delete
+    if (!deletedRows || deletedRows.length === 0) {
+      alert(
+        "Delete blocked by security rules (RLS). " +
+          "No rows were removed. Confirm your profile role is 'admin' in Supabase."
+      );
       setLoading(false);
       return;
     }
