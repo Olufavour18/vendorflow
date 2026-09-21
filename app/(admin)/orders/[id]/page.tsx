@@ -143,7 +143,6 @@ export default function AdminOrderDetailPage() {
         .eq("order_id", orderId);
 
       if (itemsError) {
-        // Non-fatal: still show order, but surface the items error
         setError(
           formatSupabaseError(
             itemsError,
@@ -166,6 +165,7 @@ export default function AdminOrderDetailPage() {
     setSuccess(null);
 
     const supabase = createClient();
+    const previousStatus = order.order_status;
 
     const {
       data: { user },
@@ -174,10 +174,7 @@ export default function AdminOrderDetailPage() {
 
     if (authError || !user) {
       setError(
-        formatSupabaseError(
-          authError,
-          "Session expired. Please log in again."
-        )
+        formatSupabaseError(authError, "Session expired. Please log in again.")
       );
       setSaving(false);
       return;
@@ -213,7 +210,6 @@ export default function AdminOrderDetailPage() {
       return;
     }
 
-    // RLS can silently allow 0 rows updated when policy blocks the write
     if (!updatedRows || updatedRows.length === 0) {
       setError(
         "Update blocked by security rules (RLS). " +
@@ -223,7 +219,6 @@ export default function AdminOrderDetailPage() {
       return;
     }
 
-    // Keep payments table in sync when payment status changes
     if (paymentStatus !== order.payment_status) {
       const { error: paymentError } = await supabase
         .from("payments")
@@ -245,7 +240,6 @@ export default function AdminOrderDetailPage() {
             "Order status saved, but updating payment record failed (RLS or permission)."
           )
         );
-        // Still reflect order change in UI
         setOrder({
           ...order,
           order_status: orderStatus,
@@ -272,6 +266,22 @@ export default function AdminOrderDetailPage() {
           : order.delivered_at,
     });
 
+    // Email customer when order status changes
+    if (orderStatus !== previousStatus && order.customer_email) {
+      try {
+        await fetch("/api/notify/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orderId: order.id,
+            type: "ORDER_STATUS_UPDATE",
+          }),
+        });
+      } catch {
+        // non-fatal
+      }
+    }
+
     setSuccess("Order updated successfully");
     setSaving(false);
     router.refresh();
@@ -290,10 +300,7 @@ export default function AdminOrderDetailPage() {
       <div className="py-12 text-center max-w-lg mx-auto space-y-4">
         <p className="text-destructive">{error || "Order not found"}</p>
         <p className="text-sm text-muted-foreground">
-          If this should be visible, open Supabase → Table Editor →{" "}
-          <code className="text-xs bg-muted px-1 rounded">profiles</code> and
-          set your user's <code className="text-xs bg-muted px-1 rounded">role</code>{" "}
-          to <code className="text-xs bg-muted px-1 rounded">admin</code>.
+          If this should be visible, set your profile role to admin in Supabase.
         </p>
         <Link href="/admin/orders">
           <Button variant="outline">Back to Orders</Button>
@@ -328,7 +335,7 @@ export default function AdminOrderDetailPage() {
       </div>
 
       {error && (
-        <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md space-y-1">
+        <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           <p>{error}</p>
         </div>
       )}
@@ -376,7 +383,6 @@ export default function AdminOrderDetailPage() {
             {addr.landmark && (
               <p className="text-muted-foreground">Landmark: {addr.landmark}</p>
             )}
-            {addr.phone && <p>Phone: {addr.phone}</p>}
           </CardContent>
         </Card>
       </div>
@@ -417,25 +423,12 @@ export default function AdminOrderDetailPage() {
                 </p>
               </div>
             ))}
-            {items.length === 0 && (
-              <p className="text-sm text-muted-foreground">No items loaded.</p>
-            )}
           </div>
           <div className="mt-4 pt-4 border-t space-y-1 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
               <span>₦{Number(order.subtotal).toLocaleString()}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Shipping</span>
-              <span>₦{Number(order.shipping_fee).toLocaleString()}</span>
-            </div>
-            {Number(order.discount_amount) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Discount</span>
-                <span>-₦{Number(order.discount_amount).toLocaleString()}</span>
-              </div>
-            )}
             <div className="flex justify-between font-semibold text-base pt-1">
               <span>Total</span>
               <span>₦{Number(order.total_amount).toLocaleString()}</span>
@@ -489,17 +482,10 @@ export default function AdminOrderDetailPage() {
               value={internalNotes}
               onChange={(e) => setInternalNotes(e.target.value)}
               rows={3}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               placeholder="Notes visible only to staff..."
             />
           </div>
-
-          {order.notes && (
-            <div className="text-sm">
-              <p className="text-muted-foreground">Customer notes</p>
-              <p className="mt-1">{order.notes}</p>
-            </div>
-          )}
 
           <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save Changes"}
