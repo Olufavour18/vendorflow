@@ -95,7 +95,6 @@ export default function CheckoutPage() {
         landmark: form.landmark || null,
       };
 
-      // 1. Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
@@ -119,7 +118,6 @@ export default function CheckoutPage() {
         throw new Error(orderError?.message || "Failed to create order");
       }
 
-      // 2. Order items
       const orderItems = items.map((item) => ({
         order_id: order.id,
         product_id: item.id,
@@ -129,6 +127,9 @@ export default function CheckoutPage() {
         quantity: item.quantity,
         unit_price: item.price,
         total_price: item.price * item.quantity,
+        variant_id: item.variantId || null,
+        variant_label: item.variantLabel || null,
+        variant_sku: item.variantSku || null,
       }));
 
       const { error: itemsError } = await supabase
@@ -139,7 +140,6 @@ export default function CheckoutPage() {
         throw new Error(itemsError.message || "Failed to save order items");
       }
 
-      // 3. Payment record
       await supabase.from("payments").insert({
         order_id: order.id,
         amount: totalAmount,
@@ -148,7 +148,6 @@ export default function CheckoutPage() {
         status: "PENDING",
       });
 
-      // 4. Paystack flow
       if (paymentMethod === "PAYSTACK") {
         const payRes = await fetch("/api/paystack/initialize", {
           method: "POST",
@@ -166,13 +165,11 @@ export default function CheckoutPage() {
           throw new Error(payData.error || "Failed to start Paystack payment");
         }
 
-        // Clear cart before redirect (order is already saved)
         clearCart();
         window.location.href = payData.authorization_url;
         return;
       }
 
-      // Bank transfer — just confirm order
       clearCart();
       router.push("/account?order=success");
       router.refresh();
@@ -348,9 +345,14 @@ export default function CheckoutPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {items.map((item) => (
-                  <div key={item.id} className="flex justify-between text-sm">
+                  <div
+                    key={item.variantId ? `${item.id}::${item.variantId}` : item.id}
+                    className="flex justify-between text-sm"
+                  >
                     <span className="line-clamp-1">
-                      {item.name} × {item.quantity}
+                      {item.name}
+                      {item.variantLabel ? ` (${item.variantLabel})` : ""} ×{" "}
+                      {item.quantity}
                     </span>
                     <span>₦{(item.price * item.quantity).toLocaleString()}</span>
                   </div>
