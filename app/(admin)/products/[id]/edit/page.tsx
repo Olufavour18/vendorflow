@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { formatSupabaseError } from "@/lib/supabase-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,7 @@ export default function EditProductPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -48,6 +50,24 @@ export default function EditProductPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setError(
+          formatSupabaseError(
+            authError,
+            "You are not signed in. Please log in as an admin and try again."
+          )
+        );
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+
       const { data, error: fetchError } = await supabase
         .from("products")
         .select("*")
@@ -55,7 +75,13 @@ export default function EditProductPage() {
         .single();
 
       if (fetchError || !data) {
-        setError(fetchError?.message || "Product not found");
+        setError(
+          formatSupabaseError(
+            fetchError,
+            "Product not found or you do not have permission to view it."
+          )
+        );
+        setNotFound(true);
         setLoading(false);
         return;
       }
@@ -64,11 +90,13 @@ export default function EditProductPage() {
         name: data.name || "",
         sku: data.sku || "",
         price: String(data.price ?? ""),
-        compareAtPrice: data.compare_at_price != null ? String(data.compare_at_price) : "",
+        compareAtPrice:
+          data.compare_at_price != null ? String(data.compare_at_price) : "",
         stockQuantity: String(data.stock_quantity ?? 0),
         shortDescription: data.short_description || "",
         description: data.description || "",
-        imageUrl: Array.isArray(data.images) && data.images[0] ? data.images[0] : "",
+        imageUrl:
+          Array.isArray(data.images) && data.images[0] ? data.images[0] : "",
         status: data.status || "ACTIVE",
         brand: data.brand || "",
       });
@@ -94,10 +122,24 @@ export default function EditProductPage() {
     const supabase = createClient();
 
     try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error(
+          formatSupabaseError(
+            authError,
+            "Session expired. Please log in again."
+          )
+        );
+      }
+
       const slug = slugify(form.name);
       const images = form.imageUrl.trim() ? [form.imageUrl.trim()] : [];
 
-      const { error: updateError } = await supabase
+      const { data: updatedRows, error: updateError } = await supabase
         .from("products")
         .update({
           name: form.name,
@@ -114,16 +156,32 @@ export default function EditProductPage() {
           status: form.status,
           images,
         })
-        .eq("id", productId);
+        .eq("id", productId)
+        .select("id");
 
       if (updateError) {
-        throw new Error(updateError.message);
+        throw new Error(
+          formatSupabaseError(
+            updateError,
+            "Failed to update product. Check your admin role and try again."
+          )
+        );
+      }
+
+      // Silent RLS: update succeeds with 0 rows
+      if (!updatedRows || updatedRows.length === 0) {
+        throw new Error(
+          "Update blocked by security rules (RLS). " +
+            "No rows were changed. Confirm your profile role is 'admin' in Supabase."
+        );
       }
 
       router.push("/admin/products");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update product");
+      setError(
+        err instanceof Error ? err.message : "Failed to update product"
+      );
       setSaving(false);
     }
   };
@@ -136,14 +194,29 @@ export default function EditProductPage() {
     );
   }
 
+  if (notFound) {
+    return (
+      <div className="py-12 text-center max-w-lg mx-auto space-y-4">
+        <p className="text-destructive">{error || "Product not found"}</p>
+        <p className="text-sm text-muted-foreground">
+          If this should be visible, open Supabase → Table Editor →{" "}
+          <code className="text-xs bg-muted px-1 rounded">profiles</code> and
+          set your user's <code className="text-xs bg-muted px-1 rounded">role</code>{" "}
+          to <code className="text-xs bg-muted px-1 rounded">admin</code>.
+        </p>
+        <Link href="/admin/products">
+          <Button variant="outline">Back to Products</Button>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Edit Product</h1>
-          <p className="text-muted-foreground mt-1">
-            Update product details
-          </p>
+          <p className="text-muted-foreground mt-1">Update product details</p>
         </div>
         <Link href="/admin/products">
           <Button variant="outline">Back</Button>
