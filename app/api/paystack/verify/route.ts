@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { decrementStockForOrder } from "@/lib/orders/stock";
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,6 +47,16 @@ export async function GET(request: NextRequest) {
     if (paid && resolvedOrderId) {
       const admin = createAdminClient();
 
+      const { data: existing } = await admin
+        .from("orders")
+        .select("id, payment_status, order_status")
+        .eq("id", resolvedOrderId)
+        .maybeSingle();
+
+      const alreadyPaid =
+        existing?.payment_status === "SUCCESS" ||
+        existing?.order_status === "PAYMENT_CONFIRMED";
+
       await admin
         .from("payments")
         .update({
@@ -65,6 +76,14 @@ export async function GET(request: NextRequest) {
           paid_at: new Date().toISOString(),
         })
         .eq("id", resolvedOrderId);
+
+      if (!alreadyPaid) {
+        try {
+          await decrementStockForOrder(admin, resolvedOrderId);
+        } catch (stockErr) {
+          console.error("Stock decrement error:", stockErr);
+        }
+      }
     }
 
     return NextResponse.json({

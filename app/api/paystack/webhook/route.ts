@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { decrementStockForOrder } from "@/lib/orders/stock";
 import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
@@ -12,7 +13,6 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const signature = request.headers.get("x-paystack-signature");
 
-    // Verify webhook signature
     const hash = crypto
       .createHmac("sha512", secretKey)
       .update(body)
@@ -31,6 +31,16 @@ export async function POST(request: NextRequest) {
 
       if (orderId) {
         const admin = createAdminClient();
+
+        const { data: existing } = await admin
+          .from("orders")
+          .select("id, payment_status, order_status")
+          .eq("id", orderId)
+          .maybeSingle();
+
+        const alreadyPaid =
+          existing?.payment_status === "SUCCESS" ||
+          existing?.order_status === "PAYMENT_CONFIRMED";
 
         await admin
           .from("payments")
@@ -51,6 +61,14 @@ export async function POST(request: NextRequest) {
             paid_at: new Date().toISOString(),
           })
           .eq("id", orderId);
+
+        if (!alreadyPaid) {
+          try {
+            await decrementStockForOrder(admin, orderId);
+          } catch (stockErr) {
+            console.error("Stock decrement error (webhook):", stockErr);
+          }
+        }
       }
     }
 
