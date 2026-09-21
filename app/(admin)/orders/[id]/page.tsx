@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { formatSupabaseError } from "@/lib/supabase-errors";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -98,6 +99,22 @@ export default function AdminOrderDetailPage() {
     async function load() {
       const supabase = createClient();
 
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setError(
+          formatSupabaseError(
+            authError,
+            "You are not signed in. Please log in as an admin and try again."
+          )
+        );
+        setLoading(false);
+        return;
+      }
+
       const { data: orderData, error: orderError } = await supabase
         .from("orders")
         .select("*")
@@ -105,7 +122,12 @@ export default function AdminOrderDetailPage() {
         .single();
 
       if (orderError || !orderData) {
-        setError(orderError?.message || "Order not found");
+        setError(
+          formatSupabaseError(
+            orderError,
+            "Order not found or you do not have permission to view it."
+          )
+        );
         setLoading(false);
         return;
       }
@@ -115,10 +137,20 @@ export default function AdminOrderDetailPage() {
       setPaymentStatus(orderData.payment_status);
       setInternalNotes(orderData.internal_notes || "");
 
-      const { data: itemsData } = await supabase
+      const { data: itemsData, error: itemsError } = await supabase
         .from("order_items")
         .select("*")
         .eq("order_id", orderId);
+
+      if (itemsError) {
+        // Non-fatal: still show order, but surface the items error
+        setError(
+          formatSupabaseError(
+            itemsError,
+            "Could not load order items (permission or network issue)."
+          )
+        );
+      }
 
       setItems((itemsData as OrderItem[]) || []);
       setLoading(false);
@@ -135,6 +167,22 @@ export default function AdminOrderDetailPage() {
 
     const supabase = createClient();
 
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      setError(
+        formatSupabaseError(
+          authError,
+          "Session expired. Please log in again."
+        )
+      );
+      setSaving(false);
+      return;
+    }
+
     const updates: Record<string, unknown> = {
       order_status: orderStatus,
       payment_status: paymentStatus,
@@ -148,28 +196,65 @@ export default function AdminOrderDetailPage() {
       updates.delivered_at = new Date().toISOString();
     }
 
-    const { error: updateError } = await supabase
+    const { data: updatedRows, error: updateError } = await supabase
       .from("orders")
       .update(updates)
-      .eq("id", order.id);
+      .eq("id", order.id)
+      .select("id");
 
     if (updateError) {
-      setError(updateError.message);
+      setError(
+        formatSupabaseError(
+          updateError,
+          "Failed to update order. Check your admin role and try again."
+        )
+      );
+      setSaving(false);
+      return;
+    }
+
+    // RLS can silently allow 0 rows updated when policy blocks the write
+    if (!updatedRows || updatedRows.length === 0) {
+      setError(
+        "Update blocked by security rules (RLS). " +
+          "No rows were changed. Confirm your profile role is 'admin' in Supabase."
+      );
       setSaving(false);
       return;
     }
 
     // Keep payments table in sync when payment status changes
     if (paymentStatus !== order.payment_status) {
-      await supabase
+      const { error: paymentError } = await supabase
         .from("payments")
         .update({
           status: paymentStatus,
           ...(paymentStatus === "SUCCESS"
-            ? { paid_at: new Date().toISOString(), verified_at: new Date().toISOString() }
+            ? {
+                paid_at: new Date().toISOString(),
+                verified_at: new Date().toISOString(),
+              }
             : {}),
         })
         .eq("order_id", order.id);
+
+      if (paymentError) {
+        setError(
+          formatSupabaseError(
+            paymentError,
+            "Order status saved, but updating payment record failed (RLS or permission)."
+          )
+        );
+        // Still reflect order change in UI
+        setOrder({
+          ...order,
+          order_status: orderStatus,
+          payment_status: paymentStatus,
+          internal_notes: internalNotes || null,
+        });
+        setSaving(false);
+        return;
+      }
     }
 
     setOrder({
@@ -202,8 +287,14 @@ export default function AdminOrderDetailPage() {
 
   if (!order) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-destructive mb-4">{error || "Order not found"}</p>
+      <div className="py-12 text-center max-w-lg mx-auto space-y-4">
+        <p className="text-destructive">{error || "Order not found"}</p>
+        <p className="text-sm text-muted-foreground">
+          If this should be visible, open Supabase → Table Editor →{" "}
+          <code className="text-xs bg-muted px-1 rounded">profiles</code> and
+          set your user's <code className="text-xs bg-muted px-1 rounded">role</code>{" "}
+          to <code className="text-xs bg-muted px-1 rounded">admin</code>.
+        </p>
         <Link href="/admin/orders">
           <Button variant="outline">Back to Orders</Button>
         </Link>
@@ -237,8 +328,8 @@ export default function AdminOrderDetailPage() {
       </div>
 
       {error && (
-        <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-          {error}
+        <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md space-y-1">
+          <p>{error}</p>
         </div>
       )}
       {success && (
@@ -248,7 +339,6 @@ export default function AdminOrderDetailPage() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Customer & address */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Customer</CardTitle>
@@ -291,7 +381,6 @@ export default function AdminOrderDetailPage() {
         </Card>
       </div>
 
-      {/* Items */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Order Items</CardTitle>
@@ -328,6 +417,9 @@ export default function AdminOrderDetailPage() {
                 </p>
               </div>
             ))}
+            {items.length === 0 && (
+              <p className="text-sm text-muted-foreground">No items loaded.</p>
+            )}
           </div>
           <div className="mt-4 pt-4 border-t space-y-1 text-sm">
             <div className="flex justify-between">
@@ -352,7 +444,6 @@ export default function AdminOrderDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Status management */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Update Status</CardTitle>
