@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { decrementStockForOrder } from "@/lib/orders/stock";
+import { deductOrderStockAtomic } from "@/lib/orders/stock";
+import { emitAutomationEvent } from "@/lib/automation";
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,13 +50,15 @@ export async function GET(request: NextRequest) {
 
       const { data: existing } = await admin
         .from("orders")
-        .select("id, payment_status, order_status")
+        .select("id, payment_status, order_status, order_number")
         .eq("id", resolvedOrderId)
         .maybeSingle();
 
       const alreadyPaid =
         existing?.payment_status === "SUCCESS" ||
-        existing?.order_status === "PAYMENT_CONFIRMED";
+        existing?.order_status === "PAYMENT_CONFIRMED" ||
+        existing?.order_status === "STOCK_CONFIRMED" ||
+        existing?.order_status === "ORDER_PROCESSING";
 
       await admin
         .from("payments")
@@ -72,18 +75,35 @@ export async function GET(request: NextRequest) {
         .from("orders")
         .update({
           payment_status: "SUCCESS",
-          order_status: "PAYMENT_CONFIRMED",
+          order_status: alreadyPaid
+            ? existing?.order_status
+            : "PAYMENT_CONFIRMED",
           paid_at: new Date().toISOString(),
         })
         .eq("id", resolvedOrderId);
 
       if (!alreadyPaid) {
         try {
-          await decrementStockForOrder(admin, resolvedOrderId);
+          await deductOrderStockAtomic(admin, resolvedOrderId);
         } catch (stockErr) {
-          console.error("Stock decrement error:", stockErr);
+          console.error("Stock deduction error:", stockErr);
         }
+
+        void emitAutomationEvent("payment.confirmed", {
+          order_id: resolvedOrderId,
+          order_number: existing?.order_number,
+          payment_method: "PAYSTACK",
+          payment_status: "SUCCESS",
+          order_status: "PAYMENT_CONFIRMED",
+          gateway_reference: reference,
+        });
       }
+    } else if (!paid && resolvedOrderId) {
+      void emitAutomationEvent("payment.failed", {
+        order_id: resolvedOrderId,
+        payment_method: "PAYSTACK",
+        payment_status: "FAILED",
+      });
     }
 
     return NextResponse.json({
